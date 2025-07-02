@@ -440,7 +440,7 @@ const 生成节点 = (我的优选) => {
   server: ${地址}
   port: ${端口}
   uuid: ${哎呀呀这是我的VL密钥}
-  udp: false
+  udp: true
   tls: ${TLS开关}
   sni: ${hostName}
   network: ws
