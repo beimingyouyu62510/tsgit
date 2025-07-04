@@ -2,10 +2,10 @@ import{connect as c}from"cloudflare:sockets";const a={
 	id:"511622",
 	uuid:"aa6afb24-210c-4fdc-979e-58f71a6f779f",
 	node:"laji.jisucf.cloudns.biz",
-	enableProxy:!1,// !0 → true（逻辑非 0 为 true，开启），!1 → false（逻辑非 1 为 false，关闭）; (反代开关)
+	enableProxy:!0,// !0 → true（逻辑非 0 为 true，开启），!1 → false（逻辑非 1 为 false，关闭）; (反代开关)
 	proxyIP:"git.jisucf.cloudns.ch",//反代:地址/端口
-	enableSocks5Proxy:!0,// !0 → true（逻辑非 0 为 true，开启），!1 → false（逻辑非 1 为 false，关闭）; (socks5开关)
-	enableSocks5Global:!0,//!0 → true（逻辑非 0 为 true，开启），!1 → false（逻辑非 1 为 false，关闭）; (全局 SOCKS5开关)
+	enableSocks5Proxy:!1,// !0 → true（逻辑非 0 为 true，开启），!1 → false（逻辑非 1 为 false，关闭）; (socks5开关)
+	enableSocks5Global:!1,//!0 → true（逻辑非 0 为 true，开启），!1 → false（逻辑非 1 为 false，关闭）; (全局 SOCKS5开关)
 	socks5Account:"12349:12349@23.231.215.32:10000", // SOCKS5 帐号，格式：用户名:密码@host:port  （感谢辣子鸡的socks5）
 	nodeName:"TS-git"};
 
