@@ -1,4 +1,3 @@
-// 订阅地址：http://域名/订阅路径
 import { connect } from 'cloudflare:sockets';
 
 // 订阅配置参数
@@ -13,18 +12,14 @@ let 我的优选TXT = [
 ];
 // 并发所有反代IP和NAT64连接优先握手
 let 反代IP = [
-  'git.jisucf.cloudns.ch',  // 美国
+  'git.jisucf.cloudns.ch', // 美国
 ];
 let 我的NAT64 = [
-  //'2606:4700:0:2523:6689:cf82:fb20:6884',
-  //'2606:4700:0:2562:fc32:bac6:4af6:ab62',
-  //'2606:4700::aa75:71a4:776b:74c',
-  //'2606:4700:0:2589:5637:a726:f90f:454b'
-  //'2602:fc59:11:64::',  //美国 - ZTVI
-  //'2602:fc59:20:64::',  //美国 - ZTVI
-  //'2602:fc59:b0:64::', // 美国 - ZTVI
-  //'2001:67c:2b0:db32::', //芬兰 - Trex
-  //'2001:67c:2960:6464::' //德国 - level66.services	
+  // '2602:fc59:11:64::', // 美国 - ZTVI
+  // '2602:fc59:20:64::', // 美国 - ZTVI
+  // '2602:fc59:b0:64::', // 美国 - ZTVI
+  // '2001:67c:2b0:db32::', // 芬兰 - Trex
+  // '2001:67c:2960:6464::' // 德国 - level66.services
 ];
 let 我的节点名字 = 'TS-git';
 let 通 = 'vl', 用 = 'ess', 猫 = 'cla', 咪 = 'sh', 符号 = '://';
@@ -83,6 +78,14 @@ async function 获取合并节点列表() {
   return 所有节点;
 }
 
+// 将IPv4地址转换为NAT64格式的IPv6地址
+function 转换到NAT64的IPv6(IPv4地址, 前缀) {
+  const 地址段 = IPv4地址.split('.');
+  if (地址段.length !== 4) throw new Error('无效的IPv4地址');
+  const 十六进制段 = 地址段.map(段 => Number(段).toString(16).padStart(2, '0'));
+  return `[${前缀}${十六进制段[0]}${十六进制段[1]}:${十六进制段[2]}${十六进制段[3]}]`;
+}
+
 // 升级HTTP请求到WebSocket连接
 async function 升级WebSocket请求(访问请求, TCP套接字, 初始数据) {
   const [客户端, 服务端] = new WebSocketPair();
@@ -91,27 +94,10 @@ async function 升级WebSocket请求(访问请求, TCP套接字, 初始数据) {
   return new Response(null, { status: 101, webSocket: 客户端 });
 }
 
-// 建立WebSocket与TCP套接字之间的双向数据传输
-async function 建立数据传输管道(WebSocket接口, TCP套接字, 初始数据) {
-  WebSocket接口.send(new Uint8Array([0, 0]));
-  const 写入器 = TCP套接字.writable.getWriter();
-  const 读取器 = TCP套接字.readable.getReader();
-  if (初始数据) await 写入器.write(初始数据);
-  WebSocket接口.addEventListener('message', async 事件 => {
-    try { await 写入器.write(事件.data); } catch { }
-  });
-  try {
-    while (true) {
-      const { value: 数据块, done: 读取完成 } = await 读取器.read();
-      if (读取完成) break;
-      try { await WebSocket接口.send(数据块); } catch { }
-    }
-  } finally {
-    try { WebSocket接口.close(); } catch { }
-    try { 读取器.cancel(); } catch { }
-    try { 写入器.releaseLock(); } catch { }
-    try { TCP套接字.close(); } catch { }
-  }
+// Base64解码处理
+function 使用Base64解码(字符串) {
+  字符串 = 字符串.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(字符串), 字符 => 字符.charCodeAt(0)).buffer;
 }
 
 // 解析VLESS协议头部信息
@@ -146,7 +132,7 @@ async function 解析VL协议头(缓冲区) {
 
   // 并发尝试所有反代IP和NAT64
   const 连接尝试数组 = [];
-  
+
   // 添加反代IP尝试
   for (const 代理地址 of 反代IP) {
     const [代理主机, 代理端口] = 代理地址.split(':');
@@ -165,7 +151,7 @@ async function 解析VL协议头(缓冲区) {
       })()
     );
   }
-  
+
   // 添加NAT64尝试
   for (const nat64前缀 of 我的NAT64) {
     连接尝试数组.push(
@@ -197,9 +183,48 @@ async function 解析VL协议头(缓冲区) {
       })()
     );
   }
+
   const 结果 = await Promise.any(连接尝试数组.map(p => p.catch(e => null)));
   if (结果) return 结果;
   throw new Error('所有连接方式均失败');
+}
+
+// 建立WebSocket与TCP套接字之间的双向数据传输
+async function 建立数据传输管道(WebSocket接口, TCP套接字, 初始数据) {
+  WebSocket接口.send(new Uint8Array([0, 0]));
+  const 写入器 = TCP套接字.writable.getWriter();
+  const 读取器 = TCP套接字.readable.getReader();
+
+  // 写入初始数据
+  if (初始数据) await 写入器.write(初始数据);
+
+  // WebSocket消息写入TCP
+  WebSocket接口.addEventListener('message', async (事件) => {
+    try {
+      await 写入器.write(事件.data);
+    } catch {
+      // 错误处理，避免中断
+    }
+  });
+
+  try {
+    // 从TCP读取数据并发送到WebSocket
+    while (true) {
+      const { value: 数据块, done: 读取完成 } = await 读取器.read();
+      if (读取完成) break;
+      try {
+        await WebSocket接口.send(数据块);
+      } catch {
+        // 错误处理，避免中断
+      }
+    }
+  } finally {
+    // 清理资源
+    try { WebSocket接口.close(); } catch {}
+    try { 读取器.cancel(); } catch {}
+    try { 写入器.releaseLock(); } catch {}
+    try { TCP套接字.close(); } catch {}
+  }
 }
 
 // 验证VLESS协议UUID有效性
@@ -207,20 +232,6 @@ function 验证VL密钥(字节数组) {
   return Array.from(字节数组, 字节 => 字节.toString(16).padStart(2, '0')).join('').replace(
     /(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})/, '$1-$2-$3-$4-$5'
   );
-}
-
-// Base64解码处理
-function 使用Base64解码(字符串) {
-  字符串 = 字符串.replace(/-/g, '+').replace(/_/g, '/');
-  return Uint8Array.from(atob(字符串), 字符 => 字符.charCodeAt(0)).buffer;
-}
-
-// 将IPv4地址转换为NAT64格式的IPv6地址
-function 转换到NAT64的IPv6(IPv4地址, 前缀) {
-  const 地址段 = IPv4地址.split('.');
-  if (地址段.length !== 4) throw new Error('无效的IPv4地址');
-  const 十六进制段 = 地址段.map(段 => Number(段).toString(16).padStart(2, '0'));
-  return `[${前缀}${十六进制段[0]}${十六进制段[1]}:${十六进制段[2]}${十六进制段[3]}]`;
 }
 
 // 生成订阅页面HTML
@@ -261,7 +272,7 @@ function 生成通用配置文件(主机名, 节点列表) {
   }).join('\n');
 }
 
-// 生成猫咪订阅配置
+// 生成Clash订阅配置
 function 生成猫咪配置文件(主机名, 节点列表) {
   if (节点列表.length === 0) 节点列表.push(`${主机名}:443#备用节点`);
   const 节点计数 = {};
