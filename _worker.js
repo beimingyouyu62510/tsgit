@@ -1,9 +1,9 @@
 import { connect } from 'cloudflare:sockets';
 
-let 我的ID = '511622'; 
-let 我的UUID = 'aa6afb24-210c-4fdc-979e-58f71a6f779f'; 
-let 反代IP = 'git.jisucf.cloudns.ch'; 
-let NAT64前缀 = '2602:fc59:11:64::'; // 例: '2602:fc59:11:64::'
+let 我的ID = '511622';
+let 我的UUID = 'aa6afb24-210c-4fdc-979e-58f71a6f779f';
+let 反代IP = 'git.jisucf.cloudns.ch';
+let NAT64前缀 = '2602:fc59:11:64::';
 
 export default {
   async fetch(req, env) {
@@ -14,22 +14,32 @@ export default {
 
     const 协议 = req.headers.get('sec-websocket-protocol');
     const raw = 解码B64(协议);
+
     if (验证UUID(new Uint8Array(raw.slice(1, 17))) !== 我的UUID) {
       return new Response('UUID无效', { status: 403 });
     }
 
-    const { TCP, 初包 } = await 解析头(raw);
-    return await 建立WS(req, TCP, 初包);
+    try {
+      const { TCP, 初包 } = await 解析头(raw);
+      return await 建立WS(req, TCP, 初包);
+    } catch (err) {
+      return new Response(`连接失败: ${err.message}`, { status: 504 });
+    }
   },
 };
 
-// === 解析协议头 ===
 async function 解析头(buf) {
   const u = new Uint8Array(buf);
   const typ = u[17], port = new DataView(buf).getUint16(18 + typ + 1);
+
+  if (port < 1 || port > 65535) throw new Error('端口不合法');
+
   let i = 18 + typ + 4, host = '';
-  if (u[i - 1] === 1) { host = Array.from(u.slice(i, i + 4)).join('.'); i += 4; }
-  else if (u[i - 1] === 2) {
+
+  if (u[i - 1] === 1) {
+    host = Array.from(u.slice(i, i + 4)).join('.');
+    i += 4;
+  } else if (u[i - 1] === 2) {
     const len = u[i];
     host = new TextDecoder().decode(u.slice(i + 1, i + 1 + len));
     i += 1 + len;
@@ -38,17 +48,19 @@ async function 解析头(buf) {
     host = Array(8).fill().map((_, idx) => dv.getUint16(i + 2 * idx).toString(16)).join(':');
     i += 16;
   }
+
   const 初包 = buf.slice(i);
 
-  let TCP = await 安全连接({ host, port }).catch(() => null);
-  if (!TCP && 反代IP) TCP = await 安全连接({ host: 反代IP.split(':')[0], port }).catch(() => null);
-  if (!TCP && NAT64前缀) TCP = await NAT64连接(host, port).catch(() => null);
+  // === 稳妥链路 ===
+  let TCP = await 尝试连接(() => 安全连接({ host, port }));
+  if (!TCP && 反代IP) TCP = await 尝试连接(() => 安全连接({ host: 反代IP, port }));
+  if (!TCP && NAT64前缀) TCP = await 尝试连接(() => NAT64连接(host, port));
 
-  if (!TCP) throw new Error('连接全失败');
+  if (!TCP) throw new Error('全部连接失败');
+
   return { TCP, 初包 };
 }
 
-// === 建立 WebSocket ===
 async function 建立WS(req, TCP, 初包) {
   const [client, server] = new WebSocketPair();
   server.accept();
@@ -56,23 +68,31 @@ async function 建立WS(req, TCP, 初包) {
   return new Response(null, { status: 101, webSocket: client });
 }
 
-// === 连接直连 / 反代 ===
+// === 加超时的安全连接 ===
+async function 尝试连接(fn) {
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('连接超时')), 3000))
+    ]);
+  } catch {
+    return null;
+  }
+}
+
 async function 安全连接({ host, port }) {
   const sock = await connect({ hostname: host, port });
   await sock.opened;
   return sock;
 }
 
-// === NAT64 连接 ===
 async function NAT64连接(host, port) {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
     host = 转NAT64(host);
   } else if (!host.includes(':')) {
     host = await DNS转NAT64(host);
   }
-  const sock = await connect({ hostname: host, port });
-  await sock.opened;
-  return sock;
+  return await 安全连接({ host, port });
 }
 
 function 转NAT64(ipv4) {
@@ -89,7 +109,6 @@ async function DNS转NAT64(name) {
   return 转NAT64(a);
 }
 
-// === WS <-> TCP 双向管道 ===
 async function 管道(ws, tcp, 初包) {
   ws.send(new Uint8Array([0, 0]));
   const w = tcp.writable.getWriter();
@@ -114,7 +133,6 @@ async function 管道(ws, tcp, 初包) {
   }
 }
 
-// === UUID校验 ===
 function 验证UUID(arr) {
   return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('').replace(
     /(\w{8})(\w{4})(\w{4})(\w{4})(\w{12})/, '$1-$2-$3-$4-$5'
