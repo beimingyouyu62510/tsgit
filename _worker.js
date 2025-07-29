@@ -25,6 +25,10 @@ const 转发地址 = [
     "two02.chenmo62511.workers.dev",
     "two03.chenmo62511.workers.dev",
     "two04.chenmo62511.workers.dev",
+    "three01.chenmo62512.workers.dev",
+    "three02.chenmo62512.workers.dev",
+    "three03.chenmo62512.workers.dev",
+    "three04.chenmo62512.workers.dev"，
   ];
 //////////////////////////////////////////////////////////////////////////网页入口////////////////////////////////////////////////////////////////////////
 let 转码 = 'vl', 转码2 = 'ess', 符号 = '://';
