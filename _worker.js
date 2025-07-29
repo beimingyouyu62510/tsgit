@@ -5,7 +5,9 @@ const 配置 = {
   隐藏订阅: false, // 是否隐藏订阅页面
   嘲讽语: "哎呀你找到了我，但是我就是不给你看，气不气，嘿嘿嘿", // 隐藏订阅时的提示
   启用反代: true, // 是否启用反向代理
-  反代IP: [
+  反
+
+代IP: [
     "git.jisucf.cloudns.ch",
     // 可添加更多反代IP或域名，格式如 "ts.hpc.tw:443"
   ],
@@ -28,14 +30,31 @@ const 转码 = "vl", 转码2 = "ess", 符号 = "://";
 
 // 健康检查缓存
 const 健康缓存 = new Map();
-健康检查();
-setInterval(健康检查, 配置.健康检测间隔);
 
 /* 主函数 */
 export default {
-  async fetch(访问请求) {
+  async fetch(访问请求, env, ctx) {
     const 订阅地址 = new URL(访问请求.url);
     const 读取请求标头 = 访问请求.headers.get("Upgrade");
+
+    // 手动触发健康检查接口
+    if (访问请求.method === "GET" && 订阅地址.pathname === "/health") {
+      const 验证 = 访问请求.headers.get("safe-key");
+      if (验证 !== 配置.安全密钥) {
+        return new Response(JSON.stringify({ error: "无效的安全密钥" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      await 健康检查();
+      return new Response(JSON.stringify({
+        status: "健康检查完成",
+        副本状态: Object.fromEntries(健康缓存),
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // 处理非WebSocket请求（订阅页面）
     if (!读取请求标头 || 读取请求标头 !== "websocket") {
@@ -64,8 +83,18 @@ export default {
       }
     }
 
+    // 触发首次健康检查（仅在缓存为空时）
+    if (健康缓存.size === 0) {
+      await 健康检查();
+    }
+
     // 处理WebSocket请求
     return await 负载均衡(访问请求);
+  },
+
+  async scheduled(event, env, ctx) {
+    // 定期健康检查
+    await 健康检查();
   },
 };
 
@@ -97,7 +126,6 @@ async function 负载均衡(访问请求) {
         const 开始时间 = Date.now();
         const 响应 = await fetch(请求);
         if (响应.status === 101) {
-          // 更新健康缓存
           const 副本URL = new URL(请求.url).hostname;
           健康缓存.set(副本URL, {
             正常: true,
