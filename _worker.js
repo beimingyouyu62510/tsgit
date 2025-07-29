@@ -12,6 +12,12 @@ let 反代IP = [
 ]; //反代IP或域名，支持多反代，会随机挑选一个发往副worker，反代IP端口一般情况下不用填写，如果你非要用非标反代的话，可以填'ts.hpc.tw:443'这样
 
 let 我的节点名字 = 'ts-git'; //自己的节点名字
+
+// 新增：用于存储不可用副 Worker 及其恢复时间
+const 不可用副Worker = new Map();
+// 新增：副 Worker 暂时禁用时间（毫秒），例如 5 分钟
+const 禁用时长 = 5 * 60 * 1000;
+
 //////////////////////////////////////////////////////////////////////////转发配置////////////////////////////////////////////////////////////////////////
 //以下是副worker的地址，不需要绑自定义域，直接使用dev最快，支持多路并发【建议1-3】，请求数会指数级增长【同账号下的情况】，如果不想并发只想负载均衡的话，并发数量设置1就行
 //并发的作用仅限于返回最快握手成功的连接，并不是同时返回数据之类的，副worker部署5-10个以上可以明显改善网络质量，适量部署以防出事哦^_^
@@ -75,15 +81,12 @@ async function 负载均衡(访问请求) {
   await 验证VL密钥(坻);
   try {
     const 坼 = await 构建新请求(访问请求);
-    const 坽 = await Promise.any(
-      坼.map(async (坾) => {
-        const 坿 = await fetch(坾);
-        return 坿.status === 101 ? 坿 : Promise.reject('状态码不是101');
-      })
-    );
+    // 负载均衡逻辑已经修改到 构建新请求 函数中处理了，这里只接收其返回的 Promise.any 结果
+    const 坽 = await 坼; // 坼 现在直接是 Promise.any 的结果
     return 坽;
-  } catch {
-    return new Response('无可用WORKER, 检查地址', { status: 400 });
+  } catch (e) {
+    console.error("无可用WORKER，或所有尝试连接的WORKER都失败了:", e);
+    return new Response('无可用WORKER, 检查地址或等待WORKER恢复。', { status: 503 });
   }
 }
 
@@ -128,9 +131,27 @@ async function 构建新请求(访问请求) {
   垎.set('Connection', 'Upgrade');
   垎.set('Upgrade', 'websocket');
   
-  const 垏 = [];
-  const 垐 = new Set();
-  const 垑 = Math.min(并发数量, 转发地址.length);
+  const 垏 = []; // 存储所有尝试的 fetch Promise
+  const 垐 = new Set(); // 存储已选的索引，避免重复
+  
+  // 新增：过滤掉当前被标记为不可用的副 Worker
+  const 可用转发地址 = 转发地址.filter(url => {
+      const 禁用时间 = 不可用副Worker.get(url);
+      if (禁用时间 && Date.now() < 禁用时间) {
+          return false; // 还在禁用期内，跳过
+      } else if (禁用时间) {
+          // 禁用期已过，从不可用列表中移除，重新尝试
+          不可用副Worker.delete(url);
+      }
+      return true;
+  });
+
+  // 如果所有副 Worker 都不可用，直接返回一个失败的 Promise
+  if (可用转发地址.length === 0) {
+      return Promise.reject(new Error('目前没有可用的WORKER，请稍后再试或检查配置。'));
+  }
+
+  const 垑 = Math.min(并发数量, 可用转发地址.length); // 从可用地址中选择并发数量
   
   const 垒 = (垓) => {
     const 垔 = Array.isArray(垓) ? 垓 : [垓];
@@ -141,18 +162,41 @@ async function 构建新请求(访问请求) {
     const 垕 = 垒(反代IP);
     const 垗 = new Headers(垎);
     垗.set('proxyip', 垕);
-    const 垘 = Math.floor(Math.random() * 转发地址.length);
     
-    if (!垐.has(垘)) {
-      const 垙 = `https://${转发地址[垘]}`;
-      const 垚 = new Request(垙, {
-        headers: 垗
+    let 垘;
+    do {
+        垘 = Math.floor(Math.random() * 可用转发地址.length); // 从可用地址中随机选择索引
+    } while (垐.has(垘));
+    垐.add(垘);
+
+    const 转发URL = 可用转发地址[垘]; // 使用可用转发地址
+    const 垙 = `https://${转发URL}`;
+    const 垚 = new Request(垙, {
+      headers: 垗
+    });
+    
+    // 包裹 fetch 请求，增加错误处理和标记不可用 Worker 的逻辑
+    const 探测请求 = fetch(垚)
+      .then(async (响应) => {
+        if (响应.status === 101) { // WebSocket 升级成功
+          return 响应;
+        } else {
+          // 副 Worker 返回非 101 状态码，可能表示错误
+          console.warn(`副 Worker ${转发URL} 返回状态码 ${响应.status}，将其标记为不可用。`);
+          不可用副Worker.set(转发URL, Date.now() + 禁用时长);
+          return Promise.reject(new Error(`副 Worker 响应错误: ${响应.status}`));
+        }
+      })
+      .catch((e) => {
+        // 连接失败或抛出异常，标记为不可用
+        console.error(`尝试连接副 Worker ${转发URL} 失败:`, e);
+        不可用副Worker.set(转发URL, Date.now() + 禁用时长);
+        return Promise.reject(e); // 继续抛出错误，以便 Promise.any 捕获
       });
-      垏.push(垚);
-      垐.add(垘);
-    }
+
+    垏.push(探测请求);
   }
-  return 垏;
+  return Promise.any(垏); // 返回 Promise.any 的结果，将在 负载均衡 中 await
 }
 
 //////////////////////////////////////////////////////////////////////////订阅页面////////////////////////////////////////////////////////////////////////
