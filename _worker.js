@@ -23,10 +23,6 @@ const 禁用时长 = 5 * 60 * 1000;
 //并发的作用仅限于返回最快握手成功的连接，并不是同时返回数据之类的，副worker部署5-10个以上可以明显改善网络质量，适量部署以防出事哦^_^
 const 并发数量 = 1;
 const 转发地址 = [
-    "one01.chenmo62510.workers.dev",
-    "one02.chenmo62510.workers.dev",
-    "one03.chenmo62510.workers.dev",
-    "one04.chenmo62510.workers.dev",
     "two01.chenmo62511.workers.dev",
     "two02.chenmo62511.workers.dev",
     "two03.chenmo62511.workers.dev",
