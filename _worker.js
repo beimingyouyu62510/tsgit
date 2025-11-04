@@ -14,10 +14,10 @@ let 我的优选TXT ='' //优选TXT路径[https://ip.txt]，表达格式与上�
 
 let 启用反代功能 = true //选择是否启用反代功能，false，true，现在你可以自由的选择是否启用反代功能了
 let 反代IP = [
-    'ip1.jisucf.cloudns.ch:17114',
+    'ip1.jisucf.cloudns.ch',
     'ip2.jisucf.cloudns.ch:20046',
     'ip3.jisucf.cloudns.ch:8313',
-    'ip4.jisucf.cloudns.ch:443',
+    'ip4.jisucf.cloudns.ch',
     'ip5.jisucf.cloudns.ch:32913'
 ];
 
