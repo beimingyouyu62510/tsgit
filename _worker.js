@@ -13,15 +13,12 @@ let 我的优选 = ['laji.jisucf.cloudns.biz',] //格式127.0.0.1:443#US@notls�
 let 我的优选TXT ='' //优选TXT路径[https://ip.txt]，表达格式与上述相同，使用TXT时脚本内部填写的节点无效，二选一
 
 let 启用反代功能 = true //选择是否启用反代功能，false，true，现在你可以自由的选择是否启用反代功能了
-let 反代IP = ['tw.tp81.netlib.re'];
+let 反代IP = ['gitus.jisucf.cloudns.ch'];
 
 let 启用SOCKS5反代 = false //如果启用此功能，原始反代将失效
 let 启用SOCKS5全局反代 = false //选择是否启用SOCKS5全局反代，启用后所有访问都是S5的落地【无论你客户端选什么节点】，访问路径是客户端--CF--SOCKS5，当然启用此功能后延迟=CF+SOCKS5，带宽取决于SOCKS5的带宽，不再享受CF高速和随时满带宽的待遇
 let 我的SOCKS5账号 = [
   '205.185.113.92:1080',
-  '37.221.193.221:10287',
-  '210.61.97.241:80',
-  '45.61.188.134:44499'
 ] //格式'账号:密码@地址:端口'，支持多SOCKS5，会随机挑选一个发往副worker
 
 let 我的节点名字 = 'ts-git' //自己的节点名字
